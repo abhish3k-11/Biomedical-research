@@ -1,6 +1,6 @@
 # imports
 from tkinter import *
-from tkinter import messagebox
+#from Tkinter import messagebox
 from PIL import Image, ImageTk
 import datetime
 import threading
@@ -13,14 +13,13 @@ import socket
 from os import listdir
 from os.path import isfile, join
 from functools import reduce
-from googleapiclient.http import MediaFileUpload
+#from googleapiclient.http import MediaFileUpload
 import time
 import os
-from barcode import EAN13
+#from barcode import EAN13
+
 
 # creating class Window inheriting Frame from tkinter
-
-
 class Window(Frame):
     # creating constructor function
     def __init__(self, master=None):
@@ -66,6 +65,9 @@ class Window(Frame):
         self.right_nails = 0
         self.mucous = 0
         self.palm = 0
+        self.video_thread = False
+        self.date_time_thread = False
+        self.rgb_frame = 0
         self.init_window(-1)
 
     def init_window(self, page_no):
@@ -100,6 +102,9 @@ class Window(Frame):
         self.time_l = Label(self, text=datetime.datetime.now().strftime(
             '%H:%M:%S'), font=("Times New Roman", 17, "bold"), bg="white", anchor='e')
         self.time_l.place(x=320, y=5, width=150)
+
+        # creating date time thread
+        self.dt_thread = threading.Thread(target=self.date_time)
 
         # patient id label
         self.PID = Label(self, textvariable=self.PatientID_StrVar, font=(
@@ -146,8 +151,21 @@ class Window(Frame):
                                      border='1', font=("Times New Roman", 17, 'bold'), command=lambda: self.all_images(page_no))
         self.next_page1_btn.place(x=323, y=260, width=146, height=55)
 
+        # making date time thrad active
+        self.date_time_thread = True
+        self.dt_thread.start()
+    
+    def date_time(self):
+        while self.date_time_thread:
+            self.date_l.configure(text=datetime.datetime.now().strftime('%d/%m/%Y'))
+            self.time_l.configure(text=datetime.datetime.now().strftime('%H:%M:%S'))
+    
+    def stop_date_time(self):
+        self.date_time_thread = False
+
     def all_images(self, page_no):
         self.remove_widgets(page_no)
+        self.stop_date_time()
         # current page no
         page_no = 1
         print("In all images, page_no 1")
@@ -237,7 +255,7 @@ class Window(Frame):
 
         # next button
         self.next_page2_btn = Button(self, text='Next', font=(
-            'Times New Roman', 22, "bold"), bg="LightBlue3" )
+            'Times New Roman', 22, "bold"), bg="LightBlue3")
         self.next_page2_btn.place(x=322, y=280, width=146, height=38)
 
     # def barcode_page(self, page_no):
@@ -254,6 +272,7 @@ class Window(Frame):
 
     def camera_fun(self, page_no, image_type):
         self.remove_widgets(page_no)
+        self.stop_date_time()
         # current page no
         page_no = 2
         print("In camera function, page_no 2")
@@ -261,11 +280,16 @@ class Window(Frame):
         # self.pack(fill=BOTH, expand=1) y=320 X x=480
 
         # adding label to show video frame
+        self.frame = None
         self.vid_frame = Frame(self, bg='grey')
         self.vid_frame.place(x=10, y=10, width=460, height=245)
-        self.video_label = Label(self.frame)
+        self.video_label = Label(self.vid_frame)
         self.video_label.place(x=10, y=10, width=460, height=245)
 
+        self.video_thread = True
+        self.vs = WebcamVideoStream(src=0).start()
+            # time.sleep(0.5)
+        self.thread_lock = threading.Lock()
         # back button
         self.back_to_1 = Button(self, text='Back', font=(
             'Times New Roman', 22, "bold"), bg="LightBlue3", command=lambda: self.all_images(page_no))
@@ -296,21 +320,44 @@ class Window(Frame):
             self.snapshot_btn['command'] = lambda: self.snapshot(page_no, 'pl')
 
         # getting video
-        self.capture = cv2.VideoCapture(0)
-        while True:
-            # add a green rectangle
-            self.frame = self.capture.read()[1]
-            self.frame = cv2.flip(self.frame, 1)
-            self.rgb_frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-            self.frame = ImageTk.PhotoImage(Image.fromarray(self.rgb_frame))
-            self.video_label['image'] = self.frame
-            self.update()
+        # self.capture = cv2.VideoCapture(0)
+        # while True:
+        #     # add a green rectangle
+        #     self.frame = self.capture.read()[1]
+        #     self.frame = cv2.flip(self.frame, 1)
+        #     if self.frame is not None:
+        #         self.rgb_frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+        #     self.frame = ImageTk.PhotoImage(Image.fromarray(self.rgb_frame))
+        #     self.video_label['image'] = self.frame
+        #     self.update()
 
-        self.capture.release()
+        # self.capture.release()
+        # testing
+        self.v_thread = threading.Thread(target=self.videoLoop)
+        self.v_thread.start()
+
+    def videoLoop(self):
+        while self.video_thread:
+            self.frame = self.vs.read()
+            self.frame = cv2.flip(self.frame, 1)
+            if self.frame is not None:
+                self.image = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+            self.rgb_frame = self.image
+            self.image = Image.fromarray(self.image)
+            self.image = ImageTk.PhotoImage(self.image)
+            self.thread_lock.acquire()
+            self.video_label.configure(image=self.image)
+            self.video_label.image = self.image
+            self.thread_lock.release()
+        self.vs.stop()
+
+    def video_close(self):
+        #print("\nvideo close");
+        self.eye_video_thread = False
 
     def snapshot(self, page_no, image_type):
         self.remove_widgets(page_no)
-
+        self.stop_date_time()
         # current page no is 3
         page_no = 3
 
@@ -394,7 +441,10 @@ class Window(Frame):
             self.vid_frame.place_forget()
             self.back_to_1.place_forget()
             self.snapshot_btn.place_forget()
-            self.capture.release()
+            # self.capture.release()
+            self.vs.stop()
+            self.video_close()
+            self.vs = WebcamVideoStream(src=0).stop()
             cv2.destroyAllWindows()
             print("capture released")
             print("Wdigets on camera func, page 2, removed")
